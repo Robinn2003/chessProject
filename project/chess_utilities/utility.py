@@ -4,7 +4,7 @@ from datetime import time
 
 import chess
 
-from project.data.PieceSquareTable import PieceSquareTable
+from chess_project.project.data.PieceSquareTable import PieceSquareTable
 
 """A generic utility class"""
 class Utility(ABC):
@@ -71,6 +71,8 @@ class Utility(ABC):
 
         if board.is_stalemate() or board.is_insufficient_material():
             return 0  # Draw
+        if self.total_pieces(board) == 0:
+            return 0
 
         end = 2 / self.total_pieces(board)
 
@@ -115,6 +117,8 @@ class Utility(ABC):
         enemy = not player
         endgame = 0
 
+        if self.total_pieces_color(board, player) == 0 or self.total_pieces_color(board, enemy) == 0:
+            return 0
         end_spec_color = 20/self.total_pieces_color(board,player) + 40/self.total_pieces_color(board, enemy)
 
 
