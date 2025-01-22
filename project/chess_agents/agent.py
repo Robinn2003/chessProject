@@ -8,7 +8,10 @@ import random
 from typing import Tuple, Union
 
 import chess
-from project.chess_utilities.utility import Utility
+from chess_project.project.chess_utilities.utility import Utility
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 """A generic agent class"""
 
@@ -20,6 +23,7 @@ class Agent(ABC):
         self.utility = utility
         self.time_limit_move = time_limit_move
         self.transposition_table = dict()
+        self.board_lock = threading.Lock()
 
 
     def calculate_move(self, board: chess.Board):
@@ -43,7 +47,30 @@ class Agent(ABC):
         while (self.delta_time < self.time_limit_move):
             self.utility.prev_bestValue = -math.inf
 
-            self.negamax(board, depth, depth, -math.inf, +math.inf)
+            with ThreadPoolExecutor() as executor:
+                futures = []
+                sorted_moves = sorted(
+                    board.legal_moves,
+                    key=lambda move: self.utility.move_value(board, move),
+                    reverse=True,
+                )
+
+                for move in sorted_moves:
+                    # Pass a deepcopy of the board to each thread
+                    copied_board = deepcopy(board)
+                    futures.append(
+                        executor.submit(self.evaluate_move, copied_board, move, depth, -math.inf, +math.inf)
+                    )
+
+                for future in as_completed(futures):
+                    try:
+                        value, move = future.result()
+                        if value > self.utility.prev_bestValue:
+                            self.utility.prev_bestValue = value
+                            self.utility.prev_bestMove = move
+                            self.hasnewMove = True
+                    except Exception as e:
+                        print(f"Thread execution error: {e} ({type(e).__name__})")
 
             depth += 1
 
@@ -99,32 +126,22 @@ class Agent(ABC):
         sorted_moves = sorted(board.legal_moves, key=lambda move: self.utility.move_value(board, move), reverse=True)
 
         for childMoves in sorted_moves:
-
             self.expanded_nodes += 1
-
             board.push(childMoves)
 
-            # if threefold repetition we do not analyze this position
             if board.can_claim_threefold_repetition():
                 board.pop()
                 continue
 
-
-            #check for mate -> store if found to make that move(enemy will want to avoid this)
-
-
-            value = -self.negamax(board, depth - 1, init_depth, -alpha, -beta)
+            value = -self.negamax(board, depth - 1, init_depth, -beta, -alpha)
             board.pop()
 
-
-            if value >= best_score :
-                 best_score = value
-                 best_move = childMoves
-                 self.hasnewMove = True
-
+            if value > best_score:
+                best_score = value
+                best_move = childMoves
+                self.hasnewMove = True
 
             alpha = max(alpha, best_score)
-
             if (beta <= alpha):
                 self.breaks +=1
                 break
@@ -138,10 +155,11 @@ class Agent(ABC):
 
         return best_score
 
-
-
-
-
+    def evaluate_move(self,board:chess.Board, move:chess.Move, depth: int, alpha: float, beta: float):
+        board.push(move)
+        value = -self.negamax(board, depth - 1, depth, -beta, -alpha)
+        board.pop()
+        return value, move
 
     def quiescence_search(self, board : chess.Board, alpha, beta):
 
@@ -170,11 +188,3 @@ class Agent(ABC):
             alpha = max(alpha, score)
 
         return best_value
-
-
-
-
-
-
-
-
